@@ -1,0 +1,16 @@
+API_PROVIDER: openai_compatible
+API_CONFIGS:
+  openai_compatible:
+    api_base: https://api.your-provider.com/v1
+    api_key: sk-your-api-key-here
+    model: video-enhance-pro-v2
+    timeout: 300
+  local:
+    api_base: http://127.0.0.1:7860/api/v1/video
+    api_key: local-no-key
+    model: local-enhance-model
+    timeout: 600
+FEATURE_FLAGS:
+  enable_8k_upscale: true
+  enable_frame_interp: true
+  enable_color_fix: true

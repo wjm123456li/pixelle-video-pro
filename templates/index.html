@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixelle-Video Pro 网页版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; transition: background-color 0.3s; }
+        .drag-area { border: 2px dashed #6366f1; transition: 0.3s; }
+        .drag-area.active { background-color: #4f46e5; color: white; border-color: #fff; }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen flex flex-col items-center">
+    <div class="w-full max-w-4xl p-6 m-4 bg-white dark:bg-gray-800 rounded-2xl shadow-lg">
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-indigo-600 dark:text-indigo-400">Pixelle-Video Pro</h1>
+            <button id="theme-toggle" class="p-2 rounded-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">
+                🌙 / ☀️
+            </button>
+        </div>
+        <!-- API 配置区 -->
+        <div class="mb-8 p-4 border rounded-xl border-gray-200 dark:border-gray-700">
+            <h2 class="text-xl font-semibold mb-4">API 接口配置</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1">服务商</label>
+                    <select id="api_provider" class="w-full p-2 rounded bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600">
+                        <option value="openai_compatible">OpenAI兼容商业API</option>
+                        <option value="local">本地开源模型API</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">模型名称</label>
+                    <input type="text" id="api_model" class="w-full p-2 rounded bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">API Base URL</label>
+                    <input type="text" id="api_base" class="w-full p-2 rounded bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">API Key</label>
+                    <input type="password" id="api_key" class="w-full p-2 rounded bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600">
+                </div>
+            </div>
+            <button id="save_config" class="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">保存配置</button>
+        </div>
+        <!-- 上传与功能选择区 -->
+        <div class="mb-8">
+            <div id="drag_area" class="drag-area p-10 text-center rounded-xl cursor-pointer mb-4">
+                <p class="text-lg">点击或拖拽视频文件到此处上传</p>
+                <input type="file" id="file_input" accept="video/*" class="hidden">
+                <p id="file_name" class="mt-2 text-indigo-500 font-medium"></p>
+            </div>
+            <div class="flex flex-wrap gap-4 mb-4">
+                <label class="flex items-center space-x-2">
+                    <input type="checkbox" id="feat_8k" class="w-4 h-4" checked> <span>8K无损放大</span>
+                </label>
+                <label class="flex items-center space-x-2">
+                    <input type="checkbox" id="feat_fps" class="w-4 h-4" checked> <span>AI智能补帧</span>
+                </label>
+                <label class="flex items-center space-x-2">
+                    <input type="checkbox" id="feat_color" class="w-4 h-4" checked> <span>色彩与曝光校正</span>
+                </label>
+            </div>
+            <button id="process_btn" disabled class="w-full py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                开始处理视频
+            </button>
+        </div>
+        <!-- 进度与日志区 -->
+        <div id="progress_container" class="hidden">
+            <h2 class="text-xl font-semibold mb-2">处理进度</h2>
+            <div class="w-full bg-gray-200 rounded-full h-4 mb-4 dark:bg-gray-700">
+                <div id="progress_bar" class="bg-indigo-600 h-4 rounded-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+            <div id="log_area" class="h-40 overflow-y-auto p-2 bg-gray-50 dark:bg-gray-900 rounded border border-gray-300 dark:border-gray-700 text-sm font-mono"></div>
+            <a id="download_link" href="#" class="hidden mt-4 inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">下载处理后的视频</a>
+        </div>
+    </div>
+    <script>
+        const themeToggle = document.getElementById('theme-toggle');
+        const html = document.documentElement;
+        themeToggle.addEventListener('click', () => html.classList.toggle('dark'));
+        let uploadedFilename = null;
+        // 加载配置
+        async function loadConfig() {
+            const res = await fetch('/api/config');
+            const cfg = await res.json();
+            document.getElementById('api_provider').value = cfg.API_PROVIDER;
+            const activeCfg = cfg.API_CONFIGS[cfg.API_PROVIDER];
+            document.getElementById('api_base').value = activeCfg.api_base;
+            document.getElementById('api_key').value = activeCfg.api_key;
+            document.getElementById('api_model').value = activeCfg.model;
+        }
+        loadConfig();
+        // 保存配置
+        document.getElementById('save_config').addEventListener('click', async () => {
+            const payload = {
+                api_provider: document.getElementById('api_provider').value,
+                api_base: document.getElementById('api_base').value,
+                api_key: document.getElementById('api_key').value,
+                model: document.getElementById('api_model').value
+            };
+            const res = await fetch('/api/config', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            if(res.ok) alert('API配置保存成功！');
+        });
+        // 文件上传逻辑
+        const dragArea = document.getElementById('drag_area');
+        const fileInput = document.getElementById('file_input');
+        const processBtn = document.getElementById('process_btn');
+        dragArea.addEventListener('click', () => fileInput.click());
+        dragArea.addEventListener('dragover', (e) => { e.preventDefault(); dragArea.classList.add('active'); });
+        dragArea.addEventListener('dragleave', () => dragArea.classList.remove('active'));
+        dragArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dragArea.classList.remove('active');
+            if(e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', (e) => { if(e.target.files.length) handleFile(e.target.files[0]); });
+        async function handleFile(file) {
+            document.getElementById('file_name').innerText = `上传中: ${file.name}...`;
+            const formData = new FormData();
+            formData.append('file', file);
+            const res = await fetch('/api/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            if(res.ok) {
+                uploadedFilename = data.filename;
+                document.getElementById('file_name').innerText = `已选择: ${data.filename}`;
+                processBtn.disabled = false;
+            } else {
+                alert('上传失败');
+            }
+        }
+        // WebSocket 处理逻辑
+        processBtn.addEventListener('click', () => {
+            if(!uploadedFilename) return;
+            const features = {
+                enable_8k_upscale: document.getElementById('feat_8k').checked,
+                enable_frame_interp: document.getElementById('feat_fps').checked,
+                enable_color_fix: document.getElementById('feat_color').checked
+            };
+            document.getElementById('progress_container').classList.remove('hidden');
+            const logArea = document.getElementById('log_area');
+            const progressBar = document.getElementById('progress_bar');
+            logArea.innerHTML = '';
+            document.getElementById('download_link').classList.add('hidden');
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const ws = new WebSocket(`${protocol}//${window.location.host}/ws/process`);
+            ws.onopen = () => ws.send(JSON.stringify({ filename: uploadedFilename, features }));
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if(data.status === 'processing') {
+                    progressBar.style.width = `${data.progress}%`;
+                    logArea.innerHTML += `<div>[${data.progress}%] ${data.step}</div>`;
+                    logArea.scrollTop = logArea.scrollHeight;
+                } else if(data.status === 'completed') {
+                    progressBar.style.width = '100%';
+                    logArea.innerHTML += `<div class="text-green-500">[100%] 处理完成！</div>`;
+                    const dl = document.getElementById('download_link');
+                    dl.href = data.download_url;
+                    dl.classList.remove('hidden');
+                    ws.close();
+                } else if(data.status === 'error') {
+                    logArea.innerHTML += `<div class="text-red-500">错误: ${data.message}</div>`;
+                    ws.close();
+                }
+            };
+        });
+    </script>
+</body>
+</html>
